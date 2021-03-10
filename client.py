@@ -1,12 +1,10 @@
 import logging
 import os
 import queue
+import simpleaudio
 import threading
 import time
 import zmq
-
-from pydub import AudioSegment
-from pydub.playback import play
 
 
 # logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
@@ -26,7 +24,8 @@ class ClientThread(threading.Thread):
         self.target = target
         self.name = name
         self.socket = None
-        self.player_instruction = {}
+        self.playback_instruction = {}
+        self.commands_list = ['play', 'stop', 'pause', 'resume', 'next']
 
     def connect(self, ip):
         context = zmq.Context()
@@ -61,9 +60,9 @@ class ClientThread(threading.Thread):
             return False
     
     def put_instruction(self, command, filename=None):
-        self.player_instruction['command'] = command
-        self.player_instruction['filename'] = filename 
-        q.put(self.player_instruction)
+        self.playback_instruction['command'] = command
+        self.playback_instruction['filename'] = filename 
+        q.put(self.playback_instruction)
     
     def run(self):
         while True:
@@ -75,8 +74,8 @@ class ClientThread(threading.Thread):
                 command = user_input[0]
                 if command == 'search':
                     self.search(command)
-                elif command == 'play':
-                    # Poner instrucción para reproducir la lista
+                elif command in self.commands_list:
+                    # Poner instrucción en la cola
                     self.put_instruction(command)
                 else:
                     filename = user_input[1]
@@ -93,10 +92,10 @@ class ClientThread(threading.Thread):
         return
 
 
-class PlayerThread(threading.Thread):
+class PlaybackThread(threading.Thread):
     def __init__(self, group=None, target=None, name=None,
                  args=(), kwargs=None, verbose=None):
-        super(PlayerThread, self).__init__()
+        super(PlaybackThread, self).__init__()
         self.target = target
         self.name = name
         self.playlist = [] # TODO llenarla PRIMERO-----------
@@ -126,11 +125,11 @@ class PlayerThread(threading.Thread):
 if __name__ == '__main__':
 
     client = ClientThread(name='client')
-    player = PlayerThread(name='player')
+    playback = PlaybackThread(name='playback')
 
     client.connect("localhost")
     client.start()
 
     time.sleep(2)
-    player.start()
+    playback.start()
     time.sleep(2)
