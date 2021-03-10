@@ -100,8 +100,32 @@ class PlaybackThread(threading.Thread):
         self.name = name
         self.playlist = [] # TODO llenarla PRIMERO-----------
         self.current_song = None
+        self.song_index = None
+        self.paused = False
         return
-
+    
+    def add(self, filename):
+        self.playlist.append(filename)
+        print(f"'{filename}' agregada a la lista")
+    
+    def play_all(self):
+        for index, filename in enumerate(self.playlist):
+            wave_obj = simpleaudio.WaveObject.from_wave_file(f"{FOLDER}/{filename}")
+            self.song_index = index
+            self.current_song = wave_obj.play()
+            self.current_song.wait_done()
+    
+    def pause_song(self):
+        print("pausing....")
+        if self.current_song.is_playing():
+            self.current_song.pause()
+            self.paused = True
+    
+    def resume_song(self):
+        if self.paused:
+            self.current_song.resume()
+            self.paused = False
+    
     def run(self):
         while True:
             if not q.empty():
@@ -111,15 +135,17 @@ class PlaybackThread(threading.Thread):
                     filename = instruction['filename']
                     self.add(filename)
                 elif command == 'play':
-                    sound = AudioSegment.from_mp3(f"{FOLDER}/{filename}")
-                    play(sound)
+                    playlist_thread = threading.Thread(target=self.play_all)
+                    playlist_thread.start()
+                elif command == 'pause':
+                    self.pause_song()
+                elif command == 'resume':
+                    self.resume_song()
+                    
                     
         return
 
-    def add(self, filename):
-        # if filename not in self.playlist:
-        self.playlist.append(filename)
-        # logging.debug('Getting ' + str(item))
+    
         
 
 if __name__ == '__main__':
