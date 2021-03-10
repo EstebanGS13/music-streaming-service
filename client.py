@@ -33,33 +33,6 @@ class ClientThread(threading.Thread):
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f'tcp://{ip}:5555')
 
-    def run(self):
-        while True:
-            user_input = input("> ")
-            if user_input == 'exit':
-                break
-            else:
-                try:
-                    user_input = user_input.split()
-                    command = user_input[0]
-                    if command == 'search':
-                        self.search(command)
-                    else:
-                        filename = user_input[1]
-                        if command == 'add':
-                            # Si se descargó o ya está descargada
-                            if self.download(filename):
-                                # Poner instrucción de agregar filename a la cola
-                                self.player_instruction['action'] = command
-                                self.player_instruction['filename'] = filename 
-                                q.put(self.player_instruction)
-                        else:
-                            print("Escribe 'up' o 'down' y luego el nombre del archivo")
-                except:
-                    print("Escribe 'up' o 'down' y luego el nombre del archivo")
-        
-        return
-
     def search(self, command):
         self.socket.send_multipart([command.encode()])
         reply = self.socket.recv_json()
@@ -86,6 +59,38 @@ class ClientThread(threading.Thread):
         else:
             print(f"'{filename}' no se encontró en el servidor")
             return False
+    
+    def put_instruction(self, command, filename=None):
+        self.player_instruction['command'] = command
+        self.player_instruction['filename'] = filename 
+        q.put(self.player_instruction)
+    
+    def run(self):
+        while True:
+            user_input = input("> ")
+            # if user_input == 'exit':
+            #     break
+            try:
+                user_input = user_input.split()
+                command = user_input[0]
+                if command == 'search':
+                    self.search(command)
+                elif command == 'play':
+                    # Poner instrucción para reproducir la lista
+                    self.put_instruction(command)
+                else:
+                    filename = user_input[1]
+                    if command == 'add':
+                        # Si se descargó o ya está descargada
+                        if self.download(filename):
+                            # Poner instrucción de agregar filename a la cola
+                            self.put_instruction(command, filename)
+                    else:
+                        print("Escribe 'up' o 'down' y luego el nombre del archivo")
+            except:
+                print("Escribe 'up' o 'down' y luego el nombre del archivo")
+        
+        return
 
 
 class PlayerThread(threading.Thread):
@@ -102,11 +107,11 @@ class PlayerThread(threading.Thread):
         while True:
             if not q.empty():
                 instruction = q.get()
-                action = instruction['action']
-                if action == 'add':
+                command = instruction['command']
+                if command == 'add':
                     filename = instruction['filename']
                     self.add(filename)
-                elif action == 'play':
+                elif command == 'play':
                     sound = AudioSegment.from_mp3(f"{FOLDER}/{filename}")
                     play(sound)
                     
