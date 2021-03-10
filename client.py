@@ -9,8 +9,6 @@ import zmq
 
 # logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
 # l = logging.getLogger("pydub.converter")
-# l.setLevel(logging.CRITICAL)
-# l.addHandler(logging.StreamHandler())
 
 FOLDER = 'songs'
 BUF_SIZE = 10
@@ -98,9 +96,10 @@ class PlaybackThread(threading.Thread):
         super(PlaybackThread, self).__init__()
         self.target = target
         self.name = name
-        self.playlist = [] # TODO llenarla PRIMERO-----------
+        self.playlist = []
         self.current_song = None
         self.song_index = None
+        self.stopped = False
         self.paused = False
         return
     
@@ -115,8 +114,11 @@ class PlaybackThread(threading.Thread):
             self.current_song = wave_obj.play()
             self.current_song.wait_done()
     
+    def play_next(self):
+        if self.current_song:
+            simpleaudio.stop_all()
+        
     def pause_song(self):
-        print("pausing....")
         if self.current_song.is_playing():
             self.current_song.pause()
             self.paused = True
@@ -137,16 +139,18 @@ class PlaybackThread(threading.Thread):
                 elif command == 'play':
                     playlist_thread = threading.Thread(target=self.play_all)
                     playlist_thread.start()
+                elif command == 'next':
+                    self.play_next()
+                elif command == 'stop':
+                    simpleaudio.stop_all()
                 elif command == 'pause':
                     self.pause_song()
                 elif command == 'resume':
                     self.resume_song()
                     
-                    
         return
 
-    
-        
+
 
 if __name__ == '__main__':
 
@@ -154,8 +158,12 @@ if __name__ == '__main__':
     playback = PlaybackThread(name='playback')
 
     client.connect("localhost")
-    client.start()
 
-    time.sleep(2)
+    # Agregar canciones descargadas previamente a la cola
+    for filename in os.listdir(FOLDER):
+        playback.add(filename)
+    
+    client.start()
+    time.sleep(1)
     playback.start()
-    time.sleep(2)
+    time.sleep(1)
