@@ -1,58 +1,131 @@
+import logging
+import os
+import queue
 import threading
 import time
-import logging
-import random
-import queue
+import zmq
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='(%(threadName)-9s) %(message)s',)
+from pydub import AudioSegment
+from pydub.playback import play
 
+
+# logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
+# l = logging.getLogger("pydub.converter")
+# l.setLevel(logging.CRITICAL)
+# l.addHandler(logging.StreamHandler())
+
+FOLDER = 'songs'
 BUF_SIZE = 10
 q = queue.Queue(BUF_SIZE)
 
 
-class ProducerThread(threading.Thread):
+class ClientThread(threading.Thread):
     def __init__(self, group=None, target=None, name=None,
                  args=(), kwargs=None, verbose=None):
-        super(ProducerThread, self).__init__()
+        super(ClientThread, self).__init__()
         self.target = target
         self.name = name
+        self.socket = None
+        self.player_instruction = {}
+
+    def connect(self, ip):
+        context = zmq.Context()
+        self.socket = context.socket(zmq.REQ)
+        self.socket.connect(f'tcp://{ip}:5555')
 
     def run(self):
         while True:
-            if not q.full():
-                item = random.randint(1, 10)
-                q.put(item)
-                logging.debug('Putting ' + str(item)
-                              + ' : ' + str(q.qsize()) + ' items in queue')
-                time.sleep(random.random())
+            user_input = input("> ")
+            if user_input == 'exit':
+                break
+            else:
+                try:
+                    user_input = user_input.split()
+                    command = user_input[0]
+                    if command == 'search':
+                        self.search(command)
+                    else:
+                        filename = user_input[1]
+                        if command == 'add':
+                            # Si se descargó o ya está descargada
+                            if self.download(filename):
+                                # Poner instrucción de agregar filename a la cola
+                                self.player_instruction['action'] = command
+                                self.player_instruction['filename'] = filename 
+                                q.put(self.player_instruction)
+                        else:
+                            print("Escribe 'up' o 'down' y luego el nombre del archivo")
+                except:
+                    print("Escribe 'up' o 'down' y luego el nombre del archivo")
+        
         return
 
+    def search(self, command):
+        self.socket.send_multipart([command.encode()])
+        reply = self.socket.recv_json()
+        if reply['files']:
+            print(*reply['files'], sep='\n')
+        else:
+            print('No hay archivos en el servidor')
 
-class ConsumerThread(threading.Thread):
+    def download(self, filename):
+        # Checar si ya existe en songs
+        if os.path.exists(f"{FOLDER}/{filename}"):
+            print(f"'{filename}' ya se descargó")
+            return True
+        
+        # Descargar la cancion del srv
+        self.socket.send_multipart([b'down', filename.encode()])
+        data = self.socket.recv()
+        if data:
+            file = open(f'{FOLDER}/{filename}', 'wb')
+            file.write(data)
+            file.close()
+            print(f"'{filename}' ha sido descargada")
+            return True
+        else:
+            print(f"'{filename}' no se encontró en el servidor")
+            return False
+
+
+class PlayerThread(threading.Thread):
     def __init__(self, group=None, target=None, name=None,
                  args=(), kwargs=None, verbose=None):
-        super(ConsumerThread, self).__init__()
+        super(PlayerThread, self).__init__()
         self.target = target
         self.name = name
+        self.playlist = [] # TODO llenarla PRIMERO-----------
+        self.current_song = None
         return
 
     def run(self):
         while True:
             if not q.empty():
-                item = q.get()
-                logging.debug('Getting ' + str(item)
-                              + ' : ' + str(q.qsize()) + ' items in queue')
-                time.sleep(random.random())
+                instruction = q.get()
+                action = instruction['action']
+                if action == 'add':
+                    filename = instruction['filename']
+                    self.add(filename)
+                elif action == 'play':
+                    sound = AudioSegment.from_mp3(f"{FOLDER}/{filename}")
+                    play(sound)
+                    
         return
 
+    def add(self, filename):
+        # if filename not in self.playlist:
+        self.playlist.append(filename)
+        # logging.debug('Getting ' + str(item))
+        
 
 if __name__ == '__main__':
 
-    p = ProducerThread(name='producer')
-    c = ConsumerThread(name='consumer')
+    client = ClientThread(name='client')
+    player = PlayerThread(name='player')
 
-    p.start()
+    client.connect("localhost")
+    client.start()
+
     time.sleep(2)
-    c.start()
+    player.start()
     time.sleep(2)
