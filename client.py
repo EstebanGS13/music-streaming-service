@@ -7,12 +7,10 @@ import time
 import zmq
 
 
-# logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
-# l = logging.getLogger("pydub.converter")
-
 FOLDER = 'songs'
 BUF_SIZE = 10
 q = queue.Queue(BUF_SIZE)
+# logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
 
 
 class ClientThread(threading.Thread):
@@ -149,7 +147,6 @@ class PlaybackThread(threading.Thread):
                     self.resume_song()
                     
         return
-
 
 
 if __name__ == '__main__':
