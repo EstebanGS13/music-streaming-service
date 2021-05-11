@@ -1,4 +1,5 @@
 import os
+import signal
 import zmq
 
 
@@ -31,13 +32,15 @@ def get_file(filename):
 if __name__ == '__main__':
     if not os.path.exists(FOLDER):
         os.makedirs(FOLDER)
-    
+
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     socket.bind('tcp://*:5555')
     print('Server is listening...')
 
     while True:
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+
         message = socket.recv_multipart()
         command = message[0].decode()
         if command == 'search':
@@ -53,4 +56,3 @@ if __name__ == '__main__':
                 socket.send(reply)
             else:
                 reply = f'{command} no es un comando válido'
-            
