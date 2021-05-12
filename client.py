@@ -21,8 +21,32 @@ class ClientThread(threading.Thread):
         self.target = target
         self.name = name
         self.socket = None
-        self.playback_instruction = {}
-        self.commands_list = ['play', 'stop', 'pause', 'resume', 'next']
+        self.playback_commands = ['play', 'stop', 'pause', 'resume', 'next']
+
+    def run(self):
+        while True:
+            user_input = input("> ")
+            # if user_input == 'exit':
+            #     break
+            try:
+                user_input = user_input.split()
+                command = user_input[0]
+                if command == 'search':
+                    self.search(command)
+                elif command in self.playback_commands:
+                    # Put only the command in the queue
+                    self.put_instruction(command)
+                else:
+                    filename = user_input[1]
+                    if command == 'add':
+                        # If download was successfull or already downloaded
+                        if self.download(filename):
+                            # Put instruction to add song to the queue
+                            self.put_instruction(command, filename)
+                    else:
+                        print("Escribe 'up' o 'down' y luego el nombre del archivo")
+            except:
+                print("Escribe 'up' o 'down' y luego el nombre del archivo")
 
     def connect(self, ip):
         """Connect the client to the server using its ip address"""
@@ -41,55 +65,29 @@ class ClientThread(threading.Thread):
 
     def download(self, filename):
         """Download a song, if it isn't already downloaded"""
-        # Checar si ya existe en songs
+        # First check if it's already downloaded
         if os.path.exists(f"{SONGS_DIR}/{filename}"):
             print(f"'{filename}' ya se descargó")
             return True
 
-        # Descargar la cancion del srv
+        # Download the song from the server
         self.socket.send_multipart([b'down', filename.encode()])
         data = self.socket.recv()
         if data:
             file = open(f'{SONGS_DIR}/{filename}', 'wb')
             file.write(data)
             file.close()
-            print(f"'{filename}' ha sido descargada")
+            print(f"'{filename}' downloaded")
             return True
         else:
-            print(f"'{filename}' no se encontró en el servidor")
+            print(f"'{filename}' not found")
             return False
 
     def put_instruction(self, command, filename=None):
-        self.playback_instruction['command'] = command
-        self.playback_instruction['filename'] = filename
-        q.put(self.playback_instruction)
-
-    def run(self):
-        while True:
-            user_input = input("> ")
-            # if user_input == 'exit':
-            #     break
-            try:
-                user_input = user_input.split()
-                command = user_input[0]
-                if command == 'search':
-                    self.search(command)
-                elif command in self.commands_list:
-                    # Poner instrucción en la cola
-                    self.put_instruction(command)
-                else:
-                    filename = user_input[1]
-                    if command == 'add':
-                        # Si se descargó o ya está descargada
-                        if self.download(filename):
-                            # Poner instrucción de agregar filename a la cola
-                            self.put_instruction(command, filename)
-                    else:
-                        print("Escribe 'up' o 'down' y luego el nombre del archivo")
-            except:
-                print("Escribe 'up' o 'down' y luego el nombre del archivo")
-
-        return
+        """Puts an instruction in the queue,
+        which has a command and a possible filename"""
+        playback_instruction = {'command': command, 'filename': filename}
+        q.put(playback_instruction)
 
 
 class PlaybackThread(threading.Thread):
@@ -106,45 +104,12 @@ class PlaybackThread(threading.Thread):
         self.paused = False
         return
 
-    def add(self, filename):
-        self.playlist.append(filename)
-        print(f"'{filename}' agregada a la lista")
-
-    def play_all(self):
-        for index, filename in enumerate(self.playlist):
-            wave_obj = simpleaudio.WaveObject.from_wave_file(
-                f"{SONGS_DIR}/{filename}")
-            self.song_index = index
-            self.song_name = filename
-            self.current_song = wave_obj.play()
-            self.current_song.wait_done()
-
-    def play_next(self):
-        if self.current_song:
-            simpleaudio.stop_all()
-
-    def pause_song(self):
-        if not self.current_song:
-            print("No song is currently playing")
-            return
-
-        if self.paused:
-            print(f"'{self.song_name}' is already paused")
-            return
-
-        self.current_song.pause()
-        self.paused = True
-
-    def resume_song(self):
-        if self.paused:
-            self.current_song.resume()
-            self.paused = False
-
     def run(self):
         while True:
             if not q.empty():
                 instruction = q.get()
                 command = instruction['command']
+
                 if command == 'add':
                     filename = instruction['filename']
                     self.add(filename)
@@ -160,7 +125,43 @@ class PlaybackThread(threading.Thread):
                 elif command == 'resume':
                     self.resume_song()
 
-        return
+    def add(self, filename):
+        """Adds a song name to the playlist"""
+        self.playlist.append(filename)
+        print(f"'{filename}' added to playlist")
+
+    def play_all(self):
+        for index, filename in enumerate(self.playlist):
+            wave_obj = simpleaudio.WaveObject.from_wave_file(
+                f"{SONGS_DIR}/{filename}")
+            self.song_index = index
+            self.song_name = filename
+            self.current_song = wave_obj.play()
+            print(wave_obj, self.current_song)
+            self.current_song.wait_done()
+
+    def play_next(self):
+        if self.current_song:
+            simpleaudio.stop_all()
+
+    def pause_song(self):
+        """Pause the song that's currently playing"""
+        if not self.current_song:
+            print("No song is currently playing")
+            return
+
+        if self.paused:
+            # TODO se puede obviar
+            print(f"'{self.song_name}' is already paused")
+            return
+
+        self.current_song.pause()
+        self.paused = True
+
+    def resume_song(self):
+        if self.paused:
+            self.current_song.resume()
+            self.paused = False
 
 
 def main():
