@@ -49,16 +49,19 @@ if __name__ == '__main__':
         print(f"Request: {message}")
         command = message['command']
         args = message['args']
+
         if command == 'search':
             list_files(socket, query=args)
+
+        elif command == 'down':
+            reply = get_file(filename=args)
+            socket.send(reply)
+
         else:
             reply = ''
             filename = message[1].decode()
             if command == 'up':
                 reply = save_file(filename, message[2])
                 socket.send_string(reply)
-            elif command == 'down':
-                reply = get_file(filename)
-                socket.send(reply)
             else:
                 reply = f'{command} no es un comando válido'

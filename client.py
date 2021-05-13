@@ -32,12 +32,12 @@ class ClientThread(threading.Thread):
                 command = user_input[0]
                 args = user_input[1:]
 
-                if command == 'search':
-                    self.search(command, args)
-
-                elif command in self.playback_commands:
+                if command in self.playback_commands:
                     # Put the full command in the queue
                     self.put_instruction(command, args)
+
+                elif command == 'search':
+                    self.search(command, args)
 
                 elif command == 'add':
                     if not args:
@@ -83,11 +83,11 @@ class ClientThread(threading.Thread):
             # First check if it's already downloaded
             if os.path.exists(f"{SONGS_DIR}/{filename}"):
                 new_args.append(filename)
-                print(f"'{filename}' ya se descargó")
+                print(f"'{filename}' already downloaded")
                 continue
 
             # Download the song from the server
-            self.socket.send_multipart([b'down', filename.encode()])
+            self.socket.send_json({'command': 'down', 'args': filename})
             data = self.socket.recv()
             if data:
                 file = open(f'{SONGS_DIR}/{filename}', 'wb')
