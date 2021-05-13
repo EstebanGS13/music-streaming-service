@@ -3,23 +3,27 @@ import signal
 import zmq
 
 
-FOLDER = 'server_files'
+SRV_DIR = 'server_files'
 
 
-def list_files(socket):
-    files = os.listdir(FOLDER)
+def list_files(socket, query):
+    files = os.listdir(SRV_DIR)
+    if query:
+        # Only keep the files that match the query
+        files = [file for file in files if query[0].lower() in file.lower()]
+
     socket.send_json({'files': files})
 
 
 def save_file(filename, data):
-    file = open(f'{FOLDER}/{filename}', 'wb')
+    file = open(f'{SRV_DIR}/{filename}', 'wb')
     file.write(data)
     file.close()
     return f"'{filename}' ha sido subido"
 
 
 def get_file(filename):
-    path = f'{FOLDER}/{filename}'
+    path = f'{SRV_DIR}/{filename}'
     if os.path.exists(path):
         file = open(path, 'rb')
         data = file.read()
@@ -30,8 +34,8 @@ def get_file(filename):
 
 
 if __name__ == '__main__':
-    if not os.path.exists(FOLDER):
-        os.makedirs(FOLDER)
+    if not os.path.exists(SRV_DIR):
+        os.makedirs(SRV_DIR)
 
     context = zmq.Context()
     socket = context.socket(zmq.REP)
@@ -41,10 +45,12 @@ if __name__ == '__main__':
     while True:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-        message = socket.recv_multipart()
-        command = message[0].decode()
+        message = socket.recv_json()
+        print(f"Request: {message}")
+        command = message['command']
+        args = message['args']
         if command == 'search':
-            list_files(socket)
+            list_files(socket, query=args)
         else:
             reply = ''
             filename = message[1].decode()

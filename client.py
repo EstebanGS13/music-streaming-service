@@ -1,6 +1,7 @@
 import logging
 import os
 import queue
+import shlex
 import signal
 import simpleaudio
 import threading
@@ -25,17 +26,18 @@ class ClientThread(threading.Thread):
 
     def run(self):
         while True:
-            user_input = input("> ").split()
+            # shlex is used to also split quoted inputs
+            user_input = shlex.split(input("> "))
             try:
                 command = user_input[0]
                 args = user_input[1:]
 
                 if command == 'search':
-                    self.search(command)
+                    self.search(command, args)
 
                 elif command in self.playback_commands:
-                    self.put_instruction(command)
                     # Put the full command in the queue
+                    self.put_instruction(command, args)
 
                 elif command == 'add':
                     if not args:
@@ -50,7 +52,7 @@ class ClientThread(threading.Thread):
                     pass
 
                 else:
-                    print(f"Command {command} not supported")
+                    print(f"Command '{command}' not supported")
 
             except IndexError:
                 print("Escribe 'up' o 'down' y luego el nombre del archivo")
@@ -64,8 +66,9 @@ class ClientThread(threading.Thread):
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f'tcp://{ip}:5555')
 
-        """List the files stored in the server"""
-        self.socket.send_multipart([command.encode()])
+    def search(self, command, args):    # TODO search with query, add -l flag:locally
+        """Lists the files stored in the server"""
+        self.socket.send_json({'command': command, 'args': args})
         reply = self.socket.recv_json()
         if 'files' in reply:
             print(*reply['files'], sep='\n')
