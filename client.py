@@ -49,13 +49,16 @@ class ClientThread(threading.Thread):
                     self.put_instruction(command, new_args)
 
                 elif command == 'del':
-                    pass
+                    if not args:
+                        raise ValueError
+                    self.delete(args)
+
 
                 else:
                     print(f"Command '{command}' not supported")
 
             except IndexError:
-                print("Escribe 'up' o 'down' y luego el nombre del archivo")
+                print("error: Enter a valid command")
             except ValueError:
                 print("error: Provide the name of the songs\n"
                       f"usage: {command} 'song1' 'song2' ...")
@@ -70,10 +73,10 @@ class ClientThread(threading.Thread):
         """Lists the files stored in the server"""
         self.socket.send_json({'command': command, 'args': args})
         reply = self.socket.recv_json()
-        if 'files' in reply:
+        if reply['files']:
             print(*reply['files'], sep='\n')
         else:
-            print('No hay archivos en el servidor')
+            print('No files found in the server')
 
     def download(self, args):
         """Returns a list containing all the available songs, which are the
@@ -101,8 +104,10 @@ class ClientThread(threading.Thread):
         return new_args
 
     def delete(self, args):
-        """Deletes the songs listed in args"""
-
+        """Deletes all the songs listed in args"""
+        for filename in args:
+            os.remove(f"{SONGS_DIR}/{filename}")
+            print(f"'{filename}' deleted")
 
     def put_instruction(self, command, args):
         """Puts an instruction in the queue,
