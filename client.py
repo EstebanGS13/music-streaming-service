@@ -25,36 +25,45 @@ class ClientThread(threading.Thread):
 
     def run(self):
         while True:
-            user_input = input("> ")
-            # if user_input == 'exit':
-            #     break
+            user_input = input("> ").split()
             try:
-                user_input = user_input.split()
                 command = user_input[0]
+                args = user_input[1:]
+
                 if command == 'search':
                     self.search(command)
+
                 elif command in self.playback_commands:
-                    # Put only the command in the queue
                     self.put_instruction(command)
+                    # Put the full command in the queue
+
+                elif command == 'add':
+                    if not args:
+                        raise ValueError
+
+                    # List cantaining the available songs
+                    new_args = self.download(args)
+                    # Put instruction to add the name of the songs to the queue
+                    self.put_instruction(command, new_args)
+
+                elif command == 'del':
+                    pass
+
                 else:
-                    filename = user_input[1]
-                    if command == 'add':
-                        # If download was successfull or already downloaded
-                        if self.download(filename):
-                            # Put instruction to add song to the queue
-                            self.put_instruction(command, filename)
-                    else:
-                        print("Escribe 'up' o 'down' y luego el nombre del archivo")
-            except:
+                    print(f"Command {command} not supported")
+
+            except IndexError:
                 print("Escribe 'up' o 'down' y luego el nombre del archivo")
+            except ValueError:
+                print("error: Provide the name of the songs\n"
+                      f"usage: {command} 'song1' 'song2' ...")
 
     def connect(self, ip):
-        """Connect the client to the server using its ip address"""
+        """Connects the client to the server using its ip address"""
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f'tcp://{ip}:5555')
 
-    def search(self, command):
         """List the files stored in the server"""
         self.socket.send_multipart([command.encode()])
         reply = self.socket.recv_json()
@@ -63,30 +72,39 @@ class ClientThread(threading.Thread):
         else:
             print('No hay archivos en el servidor')
 
-    def download(self, filename):
-        """Download a song, if it isn't already downloaded"""
-        # First check if it's already downloaded
-        if os.path.exists(f"{SONGS_DIR}/{filename}"):
-            print(f"'{filename}' ya se descargó")
-            return True
+    def download(self, args):
+        """Returns a list containing all the available songs, which are the
+        ones that were successfully downloaded or are already downloaded"""
+        new_args = []
+        for filename in args:
+            # First check if it's already downloaded
+            if os.path.exists(f"{SONGS_DIR}/{filename}"):
+                new_args.append(filename)
+                print(f"'{filename}' ya se descargó")
+                continue
 
-        # Download the song from the server
-        self.socket.send_multipart([b'down', filename.encode()])
-        data = self.socket.recv()
-        if data:
-            file = open(f'{SONGS_DIR}/{filename}', 'wb')
-            file.write(data)
-            file.close()
-            print(f"'{filename}' downloaded")
-            return True
-        else:
-            print(f"'{filename}' not found")
-            return False
+            # Download the song from the server
+            self.socket.send_multipart([b'down', filename.encode()])
+            data = self.socket.recv()
+            if data:
+                file = open(f'{SONGS_DIR}/{filename}', 'wb')
+                file.write(data)
+                file.close()
+                new_args.append(filename)
+                print(f"'{filename}' downloaded")
+            else:
+                print(f"'{filename}' not found")
 
-    def put_instruction(self, command, filename=None):
+        return new_args
+
+    def delete(self, args):
+        """Deletes the songs listed in args"""
+
+
+    def put_instruction(self, command, args):
         """Puts an instruction in the queue,
-        which has a command and a possible filename"""
-        playback_instruction = {'command': command, 'filename': filename}
+        which has a command and a list of args"""
+        playback_instruction = {'command': command, 'args': args}
         q.put(playback_instruction)
 
 
