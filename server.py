@@ -3,27 +3,27 @@ import signal
 import zmq
 
 
-SRV_DIR = 'server_files'
+SRV_DIR = 'server_files/'
 
 
-def list_files(socket, query):
-    files = os.listdir(SRV_DIR)
+def list_files(directory, query):
+    files = os.listdir(directory)
     if query:
         # Only keep the files that match the query
         files = [file for file in files if query[0].lower() in file.lower()]
 
-    socket.send_json({'files': files})
+    return files
 
 
 def save_file(filename, data):
-    file = open(f'{SRV_DIR}/{filename}', 'wb')
+    file = open(f'{SRV_DIR}{filename}', 'wb')
     file.write(data)
     file.close()
     return f"'{filename}' ha sido subido"
 
 
-def get_file(filename):
-    path = f'{SRV_DIR}/{filename}'
+def get_file(directory, filename):
+    path = f'{directory}{filename}'
     if os.path.exists(path):
         file = open(path, 'rb')
         data = file.read()
@@ -51,17 +51,12 @@ if __name__ == '__main__':
         args = message['args']
 
         if command == 'search':
-            list_files(socket, query=args)
+            reply = list_files(SRV_DIR, query=args)
+            socket.send_json({'files': reply})
 
         elif command == 'down':
-            reply = get_file(filename=args)
+            reply = get_file(SRV_DIR, filename=args)
             socket.send(reply)
 
         else:
-            reply = ''
-            filename = message[1].decode()
-            if command == 'up':
-                reply = save_file(filename, message[2])
-                socket.send_string(reply)
-            else:
-                reply = f'{command} no es un comando válido'
+            print(f"Command '{command}' not supported")
