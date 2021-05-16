@@ -22,7 +22,9 @@ class ClientThread(threading.Thread):
         self.target = target
         self.name = name
         self.socket = None
-        self.playback_commands = ['play', 'stop', 'pause', 'resume', 'next']
+        self.playback_commands = [
+            'play', 'stop', 'pause', 'resume', 'next', 'skip', 'prev'
+        ]
 
     def run(self):
         while True:
@@ -104,7 +106,7 @@ class ClientThread(threading.Thread):
         return new_args
 
     def delete(self, args):
-        """Deletes all the songs listed in args"""
+        """Deletes all the songs listed in args."""
         for filename in args:
             try:
                 os.remove(f"{SONGS_DIR}{filename}")
@@ -114,7 +116,7 @@ class ClientThread(threading.Thread):
 
     def put_instruction(self, command, args):
         """Puts an instruction in the queue,
-        which has a command and a list of args"""
+        which has a command and a list of args."""
         playback_instruction = {'command': command, 'args': args}
         q.put(playback_instruction)
 
@@ -129,7 +131,7 @@ class PlaybackThread(threading.Thread):
         self.temp_playlist = []
         self.playlist_thread = None
         self.thread_running = False
-        self.song_index = 0
+        self.index = 0
         self.song_name = None
         self.current_song = None
         self.stopped = False
@@ -151,46 +153,53 @@ class PlaybackThread(threading.Thread):
                         self.resume_song()  # Using play to unpause a song
                         continue
 
-                    if not self.thread_running:
-                        self.playlist_thread = threading.Thread(
-                            target=self.play, args=(args,))
-                        self.stopped = False
-                        self.thread_running = True
-                        self.playlist_thread.start()
+                    self.play()  # todo add args
 
-                elif command == 'stop':  # todo should reset index
+                elif command == 'stop':
                     self.stop()
                 elif command == 'pause':
                     self.pause_song()
                 elif command == 'resume':
                     self.resume_song()
-                elif command == 'next':
-                    self.play_next()
+                elif command == 'prev':
+                    self.switch_song(-1)
+                elif command in ('next', 'skip'):
+                    self.switch_song(1)
                 elif command == 'del':
                     self.remove(args)
 
     def add(self, args):
-        """Adds the songs listed in args to the playlist"""
+        """Adds the songs listed in args to the playlist."""
         for filename in args:
             self.playlist.append(filename)
             print(f"'{filename}' added to playlist")
 
-    def play(self, args):
-        if args:
-            self.temp_playlist = [
-                file for file in args if os.path.exists(f"{SONGS_DIR}{file}")
-            ]
-            for filename in self.temp_playlist:
-                if self.stopped:
-                    break
-                self.play_song(filename)
+    def play(self):
+        """Handles the playback logic."""
+        if self.thread_running:
+            return
 
-        else:
-            # Plays all the songs in playlist
-            for filename in self.playlist:
-                if self.stopped:
-                    break
-                self.play_song(filename)
+        self.playlist_thread = threading.Thread(target=self.play_all, args=())
+        self.stopped = False
+        self.thread_running = True
+        self.playlist_thread.start()
+
+    def play_all(self):
+        # if args:
+        #     self.temp_playlist = [
+        #         file for file in args if os.path.exists(f"{SONGS_DIR}{file}")
+        #     ]
+        #     for filename in self.temp_playlist:
+        #         if self.stopped:
+        #             break
+        #         self.play_song(filename)
+
+        # else:
+        # Plays all the songs in playlist starting from index
+        for filename in self.playlist[self.index:]:
+            if self.stopped:
+                break
+            self.play_song(filename)
 
         self.thread_running = False
 
@@ -198,35 +207,37 @@ class PlaybackThread(threading.Thread):
         try:
             wave_obj = simpleaudio.WaveObject.from_wave_file(
                 f"{SONGS_DIR}{filename}")
-            # self.song_index = index
             self.song_name = filename
             self.current_song = wave_obj.play()
             self.current_song.wait_done()
+            if not self.stopped:
+                # Only increment index when a song stops playing on its own
+                self.index += 1
         except FileNotFoundError:
             print(f"Can't play '{filename}', not found")
             self.remove_song(filename)
         finally:
             self.song_name = self.current_song = None
 
-    def stop(self):
-        """Stops whichever song is currently playing"""
+    def stop(self, reset=True):
+        """Stops whichever song is currently playing."""
         if not self.current_song:
             print("No song is currently playing")
             return
 
-        # This prevents the song from not being stopped if it was paused
-        # (to finish the playlist_thread execution)
+        # This prevents a paused song from not being stopped
+        # (allowing the playlist_thread to terminate)
         self.resume_song()
         self.stopped = True
         simpleaudio.stop_all()
         self.paused = False
 
-    def play_next(self):
-        if self.current_song:
-            simpleaudio.stop_all()
+        # If playback is stopped by user
+        if reset:
+            self.index = 0
 
     def pause_song(self):
-        """Pauses the song that's currently playing"""
+        """Pauses the song that's currently playing."""
         if not self.current_song:
             print("No song is currently playing")
             return
@@ -244,13 +255,32 @@ class PlaybackThread(threading.Thread):
             self.paused = False
             self.current_song.resume()
 
+    def switch_song(self, amount):
+        """Switches to the next or to the previous song."""
+        if not self.current_song:
+            print("Play a playlist first")
+            return
+
+        if not self.valid_index(amount):
+            print(f"index no valido! {self.index + amount}")
+            return
+
+        self.stop(reset=False)  # Stop and don't reset the index
+        self.playlist_thread.join()  # Wait until playlist_thread finishes
+        self.index += amount
+        self.play()
+
+    def valid_index(self, amount):
+        """Checks whether the next (or pervious) index is valid or not."""
+        return True if 0 <= self.index + amount < len(self.playlist) else False
+
     def remove(self, args):
-        """Removes all the songs in args from the playlist"""
+        """Removes all the songs in args from the playlist."""
         for filename in args:
             self.remove_song(filename)
 
     def remove_song(self, filename):
-        """Removes only a song from the playlist"""
+        """Removes only a song from the playlist."""
         try:
             self.playlist.remove(filename)
             print(f"'{filename}' removed from the playlist")
