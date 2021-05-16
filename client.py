@@ -41,6 +41,9 @@ class ClientThread(threading.Thread):
                 elif command == 'search':
                     self.search(command, args)
 
+                elif command == 'ls':
+                    self.list_local()
+
                 elif command == 'add':
                     if not args:
                         raise ValueError
@@ -79,6 +82,11 @@ class ClientThread(threading.Thread):
             print(*reply['files'], sep='\n')
         else:
             print(f"No files containing {args} were found in the server")
+
+    def list_local(self):
+        """Lists all the local files that are stores in the songs directory."""
+        files = os.listdir(SONGS_DIR)
+        print(*files, sep='\n')
 
     def download(self, args):
         """Returns a list containing all the available songs, which are the
@@ -212,7 +220,10 @@ class PlaybackThread(threading.Thread):
             self.current_song.wait_done()
             if not self.stopped:
                 # Only increment index when a song stops playing on its own
-                self.index += 1
+                if self.valid_index(1):  # If the next index is valid
+                    self.index += 1
+                else:
+                    self.index = 0  # Reset index once it reaches the end
         except FileNotFoundError:
             print(f"Can't play '{filename}', not found")
             self.remove_song(filename)
