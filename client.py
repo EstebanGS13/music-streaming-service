@@ -1,5 +1,6 @@
 import logging
 import os
+import pathlib
 import queue
 import shlex
 import signal
@@ -9,17 +10,17 @@ import time
 import zmq
 
 
+logging.basicConfig(level=logging.DEBUG,
+                    format='(%(threadName)s) %(levelname)s: %(message)s')
+
 SONGS_DIR = 'songs/'
 BUF_SIZE = 10
 q = queue.Queue(BUF_SIZE)
-# logging.basicConfig(level=logging.DEBUG, format='(%(threadName)-9s) %(message)s')
 
 
 class ClientThread(threading.Thread):
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, verbose=None):
+    def __init__(self, name):
         super(ClientThread, self).__init__()
-        self.target = target
         self.name = name
         self.socket = None
         self.playback_commands = [
@@ -28,6 +29,7 @@ class ClientThread(threading.Thread):
 
     def run(self):
         while True:
+            time.sleep(0.3)
             # shlex is used to also split quoted inputs
             user_input = shlex.split(input("> "))
             try:
@@ -60,13 +62,13 @@ class ClientThread(threading.Thread):
                     self.put_instruction(command, args)
 
                 else:
-                    print(f"Command '{command}' not supported")
+                    logging.warning(f"Command '{command}' not supported")
 
             except IndexError:
-                print("error: Enter a valid command")
+                logging.warning("Enter a valid command")
             except ValueError:
-                print("error: Provide the name of the songs\n"
-                      f"usage: {command} 'song1' 'song2' ...")
+                logging.warning("Provide the name of the songs")
+                logging.info(f"usage: {command} 'song1' 'song2' ...")
 
     def connect(self, ip):
         """Connects the client to the server using its ip address."""
@@ -74,14 +76,14 @@ class ClientThread(threading.Thread):
         self.socket = context.socket(zmq.REQ)
         self.socket.connect(f'tcp://{ip}:5555')
 
-    def search(self, command, args):    # TODO add -l flag:locally
+    def search(self, command, args):
         """Lists all the files stored in the server, if no query is given."""
         self.socket.send_json({'command': command, 'args': args})
         reply = self.socket.recv_json()
         if reply['files']:
             print(*reply['files'], sep='\n')
         else:
-            print(f"No files containing {args} were found in the server")
+            logging.info(f"No files containing {args} were found")
 
     def list_local(self):
         """Lists all the local files that are stores in the songs directory."""
@@ -96,7 +98,7 @@ class ClientThread(threading.Thread):
             # First check if it's already downloaded
             if os.path.exists(f"{SONGS_DIR}{filename}"):
                 new_args.append(filename)
-                print(f"'{filename}' already downloaded")
+                logging.debug(f"'{filename}' already downloaded")
                 continue
 
             # Download the song from the server
@@ -107,9 +109,9 @@ class ClientThread(threading.Thread):
                 file.write(data)
                 file.close()
                 new_args.append(filename)
-                print(f"'{filename}' downloaded")
+                logging.debug(f"'{filename}' downloaded")
             else:
-                print(f"'{filename}' not found or it's empty")
+                logging.warning(f"'{filename}' not found or it's empty")
 
         return new_args
 
@@ -118,9 +120,9 @@ class ClientThread(threading.Thread):
         for filename in args:
             try:
                 os.remove(f"{SONGS_DIR}{filename}")
-                print(f"'{filename}' deleted")
+                logging.debug(f"'{filename}' deleted")
             except OSError:
-                print(f"Can't delete '{filename}', not found")
+                logging.error(f"Can't delete '{filename}', not found")
 
     def put_instruction(self, command, args):
         """Puts an instruction in the queue,
@@ -129,15 +131,13 @@ class ClientThread(threading.Thread):
         q.put(playback_instruction)
 
 
-class PlaybackThread(threading.Thread):
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, verbose=None):
-        super(PlaybackThread, self).__init__()
-        self.target = target
+class PlayerThread(threading.Thread):
+    def __init__(self, name):
+        super(PlayerThread, self).__init__()
         self.name = name
         self.playlist = []
         self.temp_playlist = []
-        self.playlist_thread = None
+        self.playback_thread = None
         self.thread_running = False
         self.index = 0
         self.song_name = None
@@ -161,7 +161,7 @@ class PlaybackThread(threading.Thread):
                         self.resume_song()  # Using play to unpause a song
                         continue
 
-                    self.play()  # todo add args
+                    self.play(args)
 
                 elif command == 'stop':
                     self.stop()
@@ -180,17 +180,18 @@ class PlaybackThread(threading.Thread):
         """Adds the songs listed in args to the playlist."""
         for filename in args:
             self.playlist.append(filename)
-            print(f"'{filename}' added to playlist")
+            logging.debug(f"'{filename}' added to playlist")
 
-    def play(self):
+    def play(self, args=None):
         """Handles the playback logic."""
         if self.thread_running:
             return
 
-        self.playlist_thread = threading.Thread(target=self.play_all, args=())
+        self.playback_thread = threading.Thread(
+            target=self.play_all, name='Playback', args=())
         self.stopped = False
         self.thread_running = True
-        self.playlist_thread.start()
+        self.playback_thread.start()
 
     def play_all(self):
         # if args:
@@ -225,19 +226,22 @@ class PlaybackThread(threading.Thread):
                 else:
                     self.index = 0  # Reset index once it reaches the end
         except FileNotFoundError:
-            print(f"Can't play '{filename}', not found")
+            logging.error(f"Can't play '{filename}', not found")
             self.remove_song(filename)
+        except EOFError:
+            logging.critical(f"'{filename}' is empty. Exiting")
+            signal.raise_signal(signal.SIGINT)
         finally:
             self.song_name = self.current_song = None
 
     def stop(self, reset=True):
         """Stops whichever song is currently playing."""
         if not self.current_song:
-            print("No song is currently playing")
+            logging.debug("No song is currently playing")
             return
 
         # This prevents a paused song from not being stopped
-        # (allowing the playlist_thread to terminate)
+        # (allowing the playback_thread to terminate)
         self.resume_song()
         self.stopped = True
         simpleaudio.stop_all()
@@ -250,12 +254,11 @@ class PlaybackThread(threading.Thread):
     def pause_song(self):
         """Pauses the song that's currently playing."""
         if not self.current_song:
-            print("No song is currently playing")
+            logging.debug("No song is currently playing")
             return
 
         if self.paused:
-            # TODO se puede obviar
-            print(f"'{self.song_name}' is already paused")
+            logging.debug(f"'{self.song_name}' is already paused")
             return
 
         self.current_song.pause()
@@ -269,15 +272,15 @@ class PlaybackThread(threading.Thread):
     def switch_song(self, amount):
         """Switches to the next or to the previous song."""
         if not self.current_song:
-            print("Play a playlist first")
+            logging.info("Play a playlist first")
             return
 
         if not self.valid_index(amount):
-            print(f"index no valido! {self.index + amount}")
+            logging.debug(f"index no valido! {self.index + amount}")
             return
 
         self.stop(reset=False)  # Stop and don't reset the index
-        self.playlist_thread.join()  # Wait until playlist_thread finishes
+        self.playback_thread.join()  # Wait until playback_thread finishes
         self.index += amount
         self.play()
 
@@ -294,26 +297,26 @@ class PlaybackThread(threading.Thread):
         """Removes only a song from the playlist."""
         try:
             self.playlist.remove(filename)
-            print(f"'{filename}' removed from the playlist")
+            logging.debug(f"'{filename}' removed from the playlist")
         except ValueError:
-            print(f"'{filename}' not in playlist")
+            logging.warning(f"'{filename}' not in playlist")
 
 
 def main():
-    client = ClientThread(name='client')
-    playback = PlaybackThread(name='playback')
+    pathlib.Path(SONGS_DIR).mkdir(exist_ok=True)
+
+    client = ClientThread(name='Client')
+    player = PlayerThread(name='Player')
 
     client.connect("localhost")
 
     # Agregar canciones descargadas previamente a la cola
-    playback.add(os.listdir(SONGS_DIR))
+    player.add(os.listdir(SONGS_DIR))
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     client.start()
-    time.sleep(1)
-    playback.start()
-    time.sleep(1)
+    player.start()
 
 
 if __name__ == '__main__':

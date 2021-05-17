@@ -1,7 +1,12 @@
+import logging
 import os
+import pathlib
 import signal
 import zmq
 
+
+logging.basicConfig(level=logging.INFO,
+                    format='(Server) %(levelname)s: %(message)s')
 
 SRV_DIR = 'server_files/'
 
@@ -33,20 +38,19 @@ def get_file(directory, filename):
         return b''
 
 
-if __name__ == '__main__':
-    if not os.path.exists(SRV_DIR):
-        os.makedirs(SRV_DIR)
+def main():
+    pathlib.Path(SRV_DIR).mkdir(exist_ok=True)
 
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     socket.bind('tcp://*:5555')
-    print('Server is listening...')
+    logging.info('Server is listening...')
 
     while True:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
         message = socket.recv_json()
-        print(f"Request: {message}")
+        logging.info(f"Request = {message}")
         command = message['command']
         args = message['args']
 
@@ -59,4 +63,8 @@ if __name__ == '__main__':
             socket.send(reply)
 
         else:
-            print(f"Command '{command}' not supported")
+            logging.warning(f"Command '{command}' not supported")
+
+
+if __name__ == '__main__':
+    main()
