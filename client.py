@@ -187,32 +187,45 @@ class PlayerThread(threading.Thread):
         if self.thread_running:
             return
 
+        if args:
+            # A lambda function that checks if the filename exists
+            def f(x): return True if os.path.exists(
+                f"{SONGS_DIR}{x}") else logging.warning(f"'{x}' not found")
+            # The temp playlist is created only once, when this
+            # function is called from run() with a list of songs
+            self.temp_playlist = [file for file in args if f(file)]
+            if not self.temp_playlist:
+                logging.info(f"Type the filename from '{SONGS_DIR}', or "
+                             "download it from the server using 'add'")
+                return
+
         self.playback_thread = threading.Thread(
-            target=self.play_all, name='Playback', args=())
+            target=self.play_all, name='Playback')
         self.stopped = False
         self.thread_running = True
         self.playback_thread.start()
 
     def play_all(self):
-        # if args:
-        #     self.temp_playlist = [
-        #         file for file in args if os.path.exists(f"{SONGS_DIR}{file}")
-        #     ]
-        #     for filename in self.temp_playlist:
-        #         if self.stopped:
-        #             break
-        #         self.play_song(filename)
-
-        # else:
-        # Plays all the songs in playlist starting from index
-        for filename in self.playlist[self.index:]:
             if self.stopped:
-                break
             self.play_song(filename)
+        """Plays all the songs in playlist starting from index,
+        if temp_playlist is not empty, will play its songs instead."""
+        if self.temp_playlist:
+            for filename in self.temp_playlist[self.index:]:
+                if self.stopped:
+                    break
+                self.play_song(filename)
+        else:
+            for filename in self.playlist[self.index:]:
+                if self.stopped:
+                    break
+                self.play_song(filename)
 
         self.thread_running = False
 
     def play_song(self, filename):
+        """Plays a song given its filename, and checks if the
+        playlist will reach its end, after the song ends"""
         try:
             wave_obj = simpleaudio.WaveObject.from_wave_file(
                 f"{SONGS_DIR}{filename}")
@@ -224,7 +237,10 @@ class PlayerThread(threading.Thread):
                 if self.valid_index(1):  # If the next index is valid
                     self.index += 1
                 else:
-                    self.index = 0  # Reset index once it reaches the end
+                    # Reset index and temp list once the last song stops playing
+                    self.index = 0
+                    self.temp_playlist = []
+
         except FileNotFoundError:
             logging.error(f"Can't play '{filename}', not found")
             self.remove_song(filename)
@@ -250,6 +266,7 @@ class PlayerThread(threading.Thread):
         # If playback is stopped by user
         if reset:
             self.index = 0
+            self.temp_playlist = []
 
     def pause_song(self):
         """Pauses the song that's currently playing."""
@@ -276,7 +293,7 @@ class PlayerThread(threading.Thread):
             return
 
         if not self.valid_index(amount):
-            logging.debug(f"index no valido! {self.index + amount}")
+            logging.debug(f"Index {self.index + amount} is not valid")
             return
 
         self.stop(reset=False)  # Stop and don't reset the index
@@ -285,8 +302,12 @@ class PlayerThread(threading.Thread):
         self.play()
 
     def valid_index(self, amount):
-        """Checks whether the next (or pervious) index is valid or not."""
-        return True if 0 <= self.index + amount < len(self.playlist) else False
+        """Checks whether the next (or pervious) index
+        of the current playlist is valid or not."""
+        if self.temp_playlist:
+            return True if 0 <= self.index + amount < len(self.temp_playlist) else False
+        else:
+            return True if 0 <= self.index + amount < len(self.playlist) else False
 
     def remove(self, args):
         """Removes all the songs in args from the playlist."""
