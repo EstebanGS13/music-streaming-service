@@ -23,15 +23,19 @@ class ClientThread(threading.Thread):
         super(ClientThread, self).__init__()
         self.name = name
         self.socket = None
-        self.playback_commands = [
-            'play', 'stop', 'pause', 'resume', 'next', 'skip', 'prev'
-        ]
+        self.playback_commands = {
+            'play', 'stop', 'pause', 'resume', 'next', 'skip', 'prev', 'info'
+        }
 
     def run(self):
         while True:
             time.sleep(0.3)
-            # shlex is used to also split quoted inputs
-            user_input = shlex.split(input("> "))
+            try:
+                # shlex is used to also split quoted inputs
+                user_input = shlex.split(input("> "))
+            except Exception as e:
+                logging.error(e)
+                continue
             try:
                 command = user_input[0].lower()
                 args = user_input[1:]
@@ -69,6 +73,8 @@ class ClientThread(threading.Thread):
             except ValueError:
                 logging.warning("Provide the name of the songs")
                 logging.info(f"usage: {command} 'song1' 'song2' ...")
+            except Exception as e:
+                logging.error(e)
 
     def connect(self, ip):
         """Connects the client to the server using its ip address."""
@@ -142,6 +148,7 @@ class PlayerThread(threading.Thread):
         self.index = 0
         self.song_name = None
         self.current_song = None
+        self.playlist_info = False
         self.stopped = False
         self.paused = False
         return
@@ -173,6 +180,8 @@ class PlayerThread(threading.Thread):
                     self.switch_song(-1)
                 elif command in ('next', 'skip'):
                     self.switch_song(1)
+                elif command == 'info':
+                    self.print_playlist()
                 elif command == 'del':
                     self.remove(args)
 
@@ -181,6 +190,7 @@ class PlayerThread(threading.Thread):
         for filename in args:
             self.playlist.append(filename)
             logging.debug(f"'{filename}' added to playlist")
+        self.print_playlist()
 
     def play(self, args=None):
         """Handles the playback logic."""
@@ -199,6 +209,11 @@ class PlayerThread(threading.Thread):
                              "download it from the server using 'add'")
                 return
 
+        if not self.playlist_info:
+            # Print the playlist the first time it starts playing
+            self.print_playlist()
+            self.playlist_info = True
+
         self.playback_thread = threading.Thread(
             target=self.play_all, name='Playback')
         self.stopped = False
@@ -206,8 +221,6 @@ class PlayerThread(threading.Thread):
         self.playback_thread.start()
 
     def play_all(self):
-            if self.stopped:
-            self.play_song(filename)
         """Plays all the songs in playlist starting from index,
         if temp_playlist is not empty, will play its songs instead."""
         if self.temp_playlist:
@@ -231,6 +244,7 @@ class PlayerThread(threading.Thread):
                 f"{SONGS_DIR}{filename}")
             self.song_name = filename
             self.current_song = wave_obj.play()
+            self.print_songs()
             self.current_song.wait_done()
             if not self.stopped:
                 # Only increment index when a song stops playing on its own
@@ -240,6 +254,7 @@ class PlayerThread(threading.Thread):
                     # Reset index and temp list once the last song stops playing
                     self.index = 0
                     self.temp_playlist = []
+                    self.playlist_info = False
 
         except FileNotFoundError:
             logging.error(f"Can't play '{filename}', not found")
@@ -249,6 +264,14 @@ class PlayerThread(threading.Thread):
             signal.raise_signal(signal.SIGINT)
         finally:
             self.song_name = self.current_song = None
+
+    def valid_index(self, amount):
+        """Checks whether the next (or previous) index
+        of the current playlist is valid or not."""
+        if self.temp_playlist:
+            return True if 0 <= self.index + amount < len(self.temp_playlist) else False
+        else:
+            return True if 0 <= self.index + amount < len(self.playlist) else False
 
     def stop(self, reset=True):
         """Stops whichever song is currently playing."""
@@ -267,6 +290,7 @@ class PlayerThread(threading.Thread):
         if reset:
             self.index = 0
             self.temp_playlist = []
+            self.playlist_info = False
 
     def pause_song(self):
         """Pauses the song that's currently playing."""
@@ -301,18 +325,21 @@ class PlayerThread(threading.Thread):
         self.index += amount
         self.play()
 
-    def valid_index(self, amount):
-        """Checks whether the next (or pervious) index
-        of the current playlist is valid or not."""
-        if self.temp_playlist:
-            return True if 0 <= self.index + amount < len(self.temp_playlist) else False
-        else:
-            return True if 0 <= self.index + amount < len(self.playlist) else False
+    def print_playlist(self):
+        playlist = self.temp_playlist if self.temp_playlist else self.playlist
+        print(f"Playlist: {playlist}")
+
+    def print_songs(self):
+        prev = self.playlist[self.index - 1] if self.valid_index(-1) else '-'
+        next_ = self.playlist[self.index + 1] if self.valid_index(1) else '-'
+        print(f"\n{'Previous' :<15}{'Current' :^15}{'Next' :>15}")
+        print(f"{prev :<15}{self.song_name :^15}{next_ :>15}")
 
     def remove(self, args):
         """Removes all the songs in args from the playlist."""
         for filename in args:
             self.remove_song(filename)
+        self.print_playlist()
 
     def remove_song(self, filename):
         """Removes only a song from the playlist."""
