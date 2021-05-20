@@ -7,6 +7,7 @@ import signal
 import simpleaudio
 import threading
 import time
+import wave
 import zmq
 
 
@@ -64,6 +65,9 @@ class ClientThread(threading.Thread):
                         raise ValueError
                     self.delete(args)
                     self.put_instruction(command, args)
+
+                elif command == 'exit':
+                    signal.raise_signal(signal.SIGINT)
 
                 else:
                     logging.warning(f"Command '{command}' not supported")
@@ -147,9 +151,10 @@ class PlayerThread(threading.Thread):
         self.playlist_end = False
         self.playback_thread = None
         self.thread_running = False
-        self.index = 0
         self.song_name = None
         self.current_song = None
+        self.index = 0
+        self.update_index = True
         self.stopped = False
         self.paused = False
         return
@@ -206,9 +211,14 @@ class PlayerThread(threading.Thread):
             # function is called from run() with a list of songs
             self.temp_playlist = [file for file in args if f(file)]
             if not self.temp_playlist:
-                logging.info(f"Type the filename from '{SONGS_DIR}', or "
-                             "download it from the server using 'add'")
+                logging.info(f"Type the name of the songs from '{SONGS_DIR}', "
+                             "or download them from the server using 'add'")
                 return
+
+        if not self.playlist and not self.temp_playlist:
+            logging.info("Add songs to the playlist using 'add', or use "
+                         "'play song1 song2 ...' to play certain songs")
+            return
 
         if not self.playlist_info:
             # Print the playlist the first time it starts playing
@@ -225,8 +235,8 @@ class PlayerThread(threading.Thread):
     def play_all(self):
         """Plays all the songs in playlist starting from index.
         If temp_playlist is not empty, will play its songs instead."""
-        logging.debug(f"index: {self.index}")
         while not self.playlist_end:
+            self.update_index = True
             if self.stopped:
                 break
 
@@ -235,7 +245,7 @@ class PlayerThread(threading.Thread):
             else:
                 self.play_song(self.playlist[self.index])
 
-            if not self.stopped:
+            if self.update_index and not self.stopped:
                 # Only increment index when a song stops playing on its own
                 if self.valid_index(1):  # If the next index is valid
                     self.index += 1
@@ -262,6 +272,8 @@ class PlayerThread(threading.Thread):
         except FileNotFoundError:
             logging.error(f"Can't play '{filename}', not found")
             self.remove_song(filename)
+        except wave.Error as e:
+            logging.error(f"{e}, file extension must be '.wav'")
         except EOFError:
             logging.critical(f"'{filename}' is empty. Exiting")
             signal.raise_signal(signal.SIGINT)
@@ -325,7 +337,8 @@ class PlayerThread(threading.Thread):
 
         self.stop(reset=False)  # Stop and don't reset the index
         self.playback_thread.join()  # Wait until playback_thread finishes
-        self.index += amount
+        # Modify the index only if update_index is True
+        self.index += amount if self.update_index else 0
         self.play()
 
     def print_playlist(self):
@@ -335,7 +348,7 @@ class PlayerThread(threading.Thread):
     def print_songs(self):
         prev = self.playlist[self.index - 1] if self.valid_index(-1) else '-'
         next_ = self.playlist[self.index + 1] if self.valid_index(1) else '-'
-        logging.info(f"Playlist:\n{'Previous' :<20}{'Current' :^20}{'Next' :>20}"
+        logging.info(f"\n{'Previous' :<20}{'Current' :^20}{'Next' :>20}"
                      f"\n{'--------' :<20}{'--------' :^20}{'--------' :>20}"
                      f"\n{prev :<20}{self.song_name :^20}{next_ :>20}")
 
@@ -350,9 +363,20 @@ class PlayerThread(threading.Thread):
         try:
             rm_index = self.playlist.index(filename)
             name = self.playlist.pop(rm_index)
+            self.fix_index(rm_index)
             logging.debug(f"'{name}' removed from the playlist")
         except ValueError:
             logging.warning(f"'{filename}' not in playlist")
+
+    def fix_index(self, rm_index):
+        """Fixes the playlist's index when a song is removed from it"""
+        if self.index > rm_index:
+            self.index -= 1
+            logging.info(f"updated index : {self.index}")
+        elif self.index == rm_index:
+            # Don't update the index if the removed song
+            # is the one that's currently playing
+            self.update_index = False
 
 
 def main():
