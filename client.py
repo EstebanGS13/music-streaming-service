@@ -55,10 +55,10 @@ class ClientThread(threading.Thread):
                     if not args:
                         raise ValueError
 
-                    # List cantaining the available songs
-                    new_args = self.download(args)
-                    # Put instruction to add the songs to the playlist
-                    self.put_instruction(command, new_args)
+                    # List containing the available songs
+                    if new_args := self.download(args):
+                        # Put instruction to add the songs to the playlist
+                        self.put_instruction(command, new_args)
 
                 elif command == 'del':
                     if not args:
@@ -113,11 +113,17 @@ class ClientThread(threading.Thread):
 
             # Download the song from the server
             self.socket.send_json({'command': 'down', 'args': filename})
-            data = self.socket.recv()
-            if data:
-                file = open(f'{SONGS_DIR}{filename}', 'wb')
-                file.write(data)
-                file.close()
+            # Check if the first chunk is not empty
+            if data := self.socket.recv():
+                logging.debug(f"Downloading '{filename}'...")
+                with open(f'{SONGS_DIR}{filename}', 'ab') as file:
+                    file.write(data)  # Write the first chunk
+                    self.socket.send_string('ok')
+                    # Receive chunks until not empty
+                    while data := self.socket.recv():
+                        file.write(data)
+                        self.socket.send_string('ok')
+
                 new_args.append(filename)
                 logging.debug(f"'{filename}' downloaded")
             else:
@@ -137,6 +143,11 @@ class ClientThread(threading.Thread):
     def put_instruction(self, command, args):
         """Puts an instruction in the queue,
         which has a command and a list of args."""
+        if command == 'play' and args:
+            args = self.download(args)
+            if not args:
+                return
+
         playback_instruction = {'command': command, 'args': args}
         q.put(playback_instruction)
 
@@ -346,8 +357,9 @@ class PlayerThread(threading.Thread):
         logging.info(f"Playlist: {playlist}")
 
     def print_songs(self):
-        prev = self.playlist[self.index - 1] if self.valid_index(-1) else '-'
-        next_ = self.playlist[self.index + 1] if self.valid_index(1) else '-'
+        playlist = self.temp_playlist if self.temp_playlist else self.playlist
+        prev = playlist[self.index - 1] if self.valid_index(-1) else '-'
+        next_ = playlist[self.index + 1] if self.valid_index(1) else '-'
         logging.info(f"\n{'Previous' :<20}{'Current' :^20}{'Next' :>20}"
                      f"\n{'--------' :<20}{'--------' :^20}{'--------' :>20}"
                      f"\n{prev :<20}{self.song_name :^20}{next_ :>20}")

@@ -5,13 +5,14 @@ import signal
 import zmq
 
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='(Server) %(levelname)s: %(message)s')
 
 SRV_DIR = 'server_files/'
+CHUNK_SIZE = 1024 * 1024 * 10  # 10 MB
 
 
-def list_files(directory, query):
+def list_files(query, directory=SRV_DIR):
     files = os.listdir(directory)
     if query:
         # Only keep the files that match the query
@@ -27,15 +28,20 @@ def save_file(filename, data):
     return f"'{filename}' ha sido subido"
 
 
-def get_file(directory, filename):
+def send_file(socket, filename, directory=SRV_DIR):
     path = f'{directory}{filename}'
     if os.path.exists(path):
-        file = open(path, 'rb')
-        data = file.read()
-        file.close()
-        return data
-    else:
-        return b''
+        logging.debug(f"Sending '{filename}'...")
+        with open(path, 'rb') as file:
+            # Read chunks while not empty
+            while data := file.read(CHUNK_SIZE):
+                socket.send(data)
+                if socket.recv_string() != 'ok':
+                    break
+            else:
+                logging.debug(f"'{filename}' sent")
+
+    socket.send(b'')  # Sent when not found or as the last reply
 
 
 def main():
@@ -55,12 +61,12 @@ def main():
         args = message['args']
 
         if command == 'search':
-            reply = list_files(SRV_DIR, query=args)
+            reply = list_files(query=args)
             socket.send_json({'files': reply})
 
         elif command == 'down':
-            reply = get_file(SRV_DIR, filename=args)
-            socket.send(reply)
+            send_file(socket, filename=args)
+
 
         else:
             logging.warning(f"Command '{command}' not supported")
