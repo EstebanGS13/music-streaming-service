@@ -21,13 +21,6 @@ def list_files(query, directory=SRV_DIR):
     return files
 
 
-def save_file(filename, data):
-    file = open(f'{SRV_DIR}{filename}', 'wb')
-    file.write(data)
-    file.close()
-    return f"'{filename}' ha sido subido"
-
-
 def send_file(socket, filename, directory=SRV_DIR):
     path = f'{directory}{filename}'
     if os.path.exists(path):
@@ -66,7 +59,6 @@ def main():
 
         elif command == 'down':
             send_file(socket, filename=args)
-
 
         else:
             logging.warning(f"Command '{command}' not supported")
