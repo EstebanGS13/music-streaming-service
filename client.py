@@ -11,7 +11,7 @@ import wave
 import zmq
 
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='(%(threadName)s) %(levelname)s: %(message)s')
 
 SONGS_DIR = 'songs/'
@@ -200,6 +200,7 @@ class PlayerThread(threading.Thread):
                     self.remove(args)
                 elif command == 'info':
                     self.print_playlist()
+                    logging.debug(f"Current song: {self.song_name}")
 
     def add(self, args):
         """Adds the songs listed in args to the playlist."""

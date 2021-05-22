@@ -5,7 +5,7 @@ import signal
 import zmq
 
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='(Server) %(levelname)s: %(message)s')
 
 SRV_DIR = 'server_files/'
@@ -43,7 +43,7 @@ def main():
     context = zmq.Context()
     socket = context.socket(zmq.REP)
     socket.bind('tcp://*:5555')
-    logging.info('Server is listening...')
+    logging.info('Server is listening ...')
 
     while True:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
