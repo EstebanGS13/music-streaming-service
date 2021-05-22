@@ -25,7 +25,7 @@ class ClientThread(threading.Thread):
         self.name = name
         self.socket = None
         self.playback_commands = {
-            'play', 'stop', 'pause', 'resume', 'next', 'skip', 'prev', 'remove', 'info'
+            'play', 'stop', 'pause', 'resume', 'next', 'skip', 'prev', 'rm', 'info'
         }
 
     def run(self):
@@ -168,7 +168,6 @@ class PlayerThread(threading.Thread):
         self.update_index = True
         self.stopped = False
         self.paused = False
-        return
 
     def run(self):
         while True:
@@ -197,7 +196,7 @@ class PlayerThread(threading.Thread):
                     self.switch_song(-1)
                 elif command in ('next', 'skip'):
                     self.switch_song(1)
-                elif command in ('del', 'remove'):
+                elif command in ('del', 'rm'):
                     self.remove(args)
                 elif command == 'info':
                     self.print_playlist()
@@ -285,9 +284,10 @@ class PlayerThread(threading.Thread):
             self.remove_song(filename)
         except wave.Error as e:
             logging.error(f"{e}, file extension must be '.wav'")
+            self.remove(filename)
         except EOFError:
-            logging.critical(f"'{filename}' is empty. Exiting")
-            signal.raise_signal(signal.SIGINT)
+            logging.error(f"'{filename}' is empty")
+            self.remove(filename)
         finally:
             self.song_name = self.current_song = None
 
@@ -366,6 +366,10 @@ class PlayerThread(threading.Thread):
 
     def remove(self, args):
         """Removes all the songs in args from the playlist."""
+        if not args:
+            logging.warning("Provide the name of the songs to")
+            return
+
         for filename in args:
             self.remove_song(filename)
         self.print_playlist()
