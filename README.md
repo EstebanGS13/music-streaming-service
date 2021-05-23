@@ -28,7 +28,6 @@ $ py client.py
 (MainThread) INFO: Playlist: ['Coral.wav', 'Fushiguro.wav', 'Solitude.wav']
 >
 ```
-```
 
 The client script gets the commands from the user. These commands are described below, the arguments inside brackets are optional. `>` represents the prompt for user input.
 
