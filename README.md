@@ -1,14 +1,16 @@
 # Music streaming service
 
-A simple project to transfer files between a server and a client, resembling a music streaming service. A user can play the songs stored in the server (which downloads them) or play songs that are stored locally. The main focus for this project was to use concurrency and server-client communication.
+A simple project to transfer files between a server and a client, resembling a music streaming service. A user can play the songs stored in the server (which downloads them) or play songs that are stored locally. The main focus for this project was to use concurrency and client-server communication.
 
 ## Installation
 
-Install [Python](https://www.python.org) 3.9+, then install the requirements. It is recommended to first create a [virtual environment](https://docs.python.org/3/library/venv.html).
+1. Install [Python](https://www.python.org) 3.8+.
+2. In Ubuntu run the command `sudo apt-get install libasound2-dev`. For Windows, you may need to install Microsoft Visual C++ Build Tools.
+3. Install the requirements. It is recommended to first create a [virtual environment](https://docs.python.org/3/library/venv.html).
 
-```sh
-pip install requirements.txt
-```
+    ```sh
+    pip install -r requirements.txt
+    ```
 
 ## Usage
 
@@ -24,14 +26,15 @@ Then the client:
 ```text
 $ py client.py
 (MainThread) INFO: Playlist: ['Coral.wav', 'Fushiguro.wav', 'Solitude.wav']
-> 
+>
+```
 ```
 
 The client script gets the commands from the user. These commands are described below, the arguments inside brackets are optional. `>` represents the prompt for user input.
 
 - `search [query]` lists all server files, or the files that match the query.
 
-  ```sh
+  ```text
   > search ma
   Magic.wav
   Makani.wav
@@ -67,7 +70,7 @@ The client script gets the commands from the user. These commands are described 
 
 - `del filename [filename ...]` deletes a song (or list of songs) from `songs/`. Also removes them from the main playlist.
 
-  ```sh
+  ```text
   > del Fushiguro.wav "What If.wav"
   (Player) INFO: Playlist: ['Coral.wav', 'Solitude.wav', 'Makani.wav', 'Hollow Sun.wav']
   ```
